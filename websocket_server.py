@@ -1,80 +1,112 @@
-# Server WebSocket untuk Asybot (Otak Robot)
-# Versi 5 - Siap menerima input percakapan, simulator dihapus.
-
 import asyncio
 import websockets
 import json
+import os
+import google.generativeai as genai
+from dotenv import load_dotenv
 
-CONNECTED_CLIENTS = set()
+# ===================================================================
+# KONFIGURASI
+# ===================================================================
+# Memuat environment variables dari file .env
+load_dotenv()
 
-async def send_command_to_all(command, value):
-    if CONNECTED_CLIENTS:
-        message = json.dumps({"command": command, "value": value})
-        print(f"Server > Mengirim perintah: {message}")
-        await asyncio.gather(
-            *[client.send(message) for client in CONNECTED_CLIENTS]
-        )
+# Ambil API key dari environment variable
+API_KEY = os.getenv("GOOGLE_API_KEY")
+
+if not API_KEY:
+    raise ValueError("GOOGLE_API_KEY tidak ditemukan. Mohon buat file .env dan tambahkan kunci Anda.")
+
+# Konfigurasi model Gemini
+genai.configure(api_key=API_KEY)
+model = genai.GenerativeModel('gemini-1.5-flash')
+
+# ===================================================================
+# LOGIKA INTI SERVER
+# ===================================================================
+# Set untuk menyimpan semua koneksi klien yang aktif
+connected_clients = set()
+
+async def broadcast(message):
+    """Mengirim pesan ke semua klien yang terhubung menggunakan asyncio.gather."""
+    if connected_clients:
+        # Buat daftar tugas (coroutines) untuk mengirim pesan ke setiap klien
+        tasks = [client.send(message) for client in connected_clients]
+        # Jalankan semua tugas secara bersamaan dan tunggu hingga semuanya selesai
+        await asyncio.gather(*tasks)
 
 async def process_conversation(transcript):
     """
-    Placeholder untuk alur kerja AI.
-    Di sinilah STT -> LLM -> TTS akan terjadi.
+    Memproses transkrip ucapan, mendapatkan respons dari LLM.
     """
-    print(f"Server | AI > Menerima transkrip: '{transcript}'")
-    await send_command_to_all("setExpression", "THINKING")
+    print(f"LLM > Menerima transkrip: '{transcript}'")
     
-    # --- Simulasi Pemrosesan AI ---
-    await asyncio.sleep(2)
-    response_text = f"Anda mengatakan: {transcript}. Respon dari AI akan ada di sini."
-    # --- Akhir Simulasi ---
+    # Perintahkan klien untuk menampilkan ekspresi 'Berpikir'
+    thinking_message = json.dumps({"command": "setExpression", "value": "THINKING"})
+    await broadcast(thinking_message)
 
-    print(f"Server | AI > Menghasilkan respons: '{response_text}'")
-    await send_command_to_all("speak", response_text)
-    await asyncio.sleep(5) # Estimasi waktu bicara
-    await send_command_to_all("setExpression", "NEUTRAL")
-
+    try:
+        response = await model.generate_content_async(
+            f"Anda adalah Asybot, robot asisten yang ramah dan membantu. "
+            f"Jawab pertanyaan berikut dengan singkat, jelas, dan dalam Bahasa Indonesia: '{transcript}'"
+        )
+        
+        ai_response_text = response.text.strip()
+        print(f"LLM < Menghasilkan respons: '{ai_response_text}'")
+        
+        return json.dumps({
+            "command": "speak",
+            "value": ai_response_text
+        })
+        
+    except Exception as e:
+        print(f"LLM > Terjadi error saat menghubungi Gemini API: {e}")
+        return json.dumps({
+            "command": "speak",
+            "value": "Maaf, otak saya sedang perlu istirahat sejenak. Coba lagi nanti ya."
+        })
 
 async def handler(websocket):
-    if len(CONNECTED_CLIENTS) >= 1:
-        print(f"Server > Menolak koneksi dari {websocket.remote_address}, klien sudah ada.")
-        await websocket.close(1013, "Server sibuk")
-        return
-
-    CONNECTED_CLIENTS.add(websocket)
-    print(f"Server > Klien (Tablet) terhubung dari {websocket.remote_address}")
+    """
+    Menangani koneksi WebSocket yang masuk, satu per klien.
+    """
+    connected_clients.add(websocket)
+    print(f"Server > Klien baru terhubung: {websocket.remote_address}. Total klien: {len(connected_clients)}")
     
     try:
-        # Loop untuk mendengarkan pesan dari klien
         async for message in websocket:
             print(f"Server < Menerima pesan: {message}")
             try:
                 data = json.loads(message)
-                # Periksa apakah pesan memiliki format yang kita harapkan
+                
                 if data.get("event") == "speechResult":
                     transcript = data.get("transcript", "")
-                    # Jalankan proses percakapan tanpa memblokir handler
-                    asyncio.create_task(process_conversation(transcript))
+                    
+                    if transcript:
+                        response_message = await process_conversation(transcript)
+                        await websocket.send(response_message)
+                        print(f"Server > Mengirim respons ke klien.")
+                        
             except json.JSONDecodeError:
-                print("Server < Menerima pesan non-JSON.")
+                print("Server < Menerima pesan yang bukan JSON.")
             except Exception as e:
-                print(f"Server < Error saat memproses pesan: {e}")
+                print(f"Server > Terjadi error saat memproses pesan: {e}")
 
-    except websockets.exceptions.ConnectionClosed:
-        print(f"Server > Koneksi dari {websocket.remote_address} ditutup.")
     finally:
-        if websocket in CONNECTED_CLIENTS:
-            CONNECTED_CLIENTS.remove(websocket)
-        print(f"Server > Klien dari {websocket.remote_address} dihapus.")
-
+        connected_clients.remove(websocket)
+        print(f"Server > Klien terputus: {websocket.remote_address}. Total klien: {len(connected_clients)}")
 
 async def main():
+    """
+    Fungsi utama untuk memulai server WebSocket.
+    """
+    print("Server > Memulai server WebSocket di ws://localhost:8765...")
     async with websockets.serve(handler, "localhost", 8765):
-        print("Server > Server WebSocket berjalan di ws://localhost:8765")
-        await asyncio.Future()  # Berjalan selamanya
+        await asyncio.Future()
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\nServer > Server dihentikan.")
+        print("\nServer > Server dihentikan oleh pengguna.")
 

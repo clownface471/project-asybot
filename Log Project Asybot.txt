@@ -1,0 +1,65 @@
+Log Project Asybot #000001 
+19/09/2025 10:35
+
+[TUJUAN SAAT INI]:
+Memfinalisasi prototipe perangkat lunak dan beralih ke arsitektur sistem robot yang sebenarnya, dengan mendefinisikan komunikasi antara unit komputasi (Jetson) dan antarmuka (tablet).
+
+[PROGRES YANG TELAH DIBUAT]:
+
+Prototipe antarmuka (asybot_face_ui.html) telah selesai, dengan fungsionalitas penuh dari input suara, simulasi LLM, TTS, hingga lip-sync.
+
+Semua modul perangkat lunak sisi klien telah terbukti berfungsi secara terintegrasi.
+
+Arsitektur modular telah divalidasi, siap untuk dipisahkan antara front-end dan back-end.
+
+[LANGKAH BERIKUTNYA]:
+
+Membuat skrip dasar untuk server WebSocket (Python) yang akan berjalan di Jetson.
+
+Memodifikasi asybot_face_ui.html untuk bertindak sebagai klien WebSocket, menghapus logika AI internalnya.
+
+[RISIKO/HAMBATAN]:
+
+Rekayasa-balik kontroler hoverboard tetap menjadi risiko teknis utama yang memerlukan R&D paralel.
+
+Log Project Asybot #000002 
+19/09/2025 10:51
+
+[TUJUAN SAAT INI]:
+Memulai pengembangan backend (otak robot) secara paralel dengan fabrikasi perangkat keras, serta menyediakan panduan teknis yang jelas untuk tim hardware.
+
+[PROGRES YANG TELAH DIBUAT]:
+
+Arsitektur komunikasi Client-Server (Tablet-Jetson) telah divalidasi dan berfungsi menggunakan WebSocket.
+
+Prototipe antarmuka visual (wajah) telah selesai dan siap menerima perintah.
+
+[LANGKAH BERIKUTNYA]:
+
+Untuk Tim Perangkat Lunak (kita): Mengganti command_simulator di websocket_server.py dengan modul Speech-to-Text (STT) pertama yang fungsional.
+
+Untuk Tim Perangkat Keras: Memulai rekayasa-balik (reverse engineering) hoverboard dan pengadaan komponen.
+
+[RISIKO/HAMBATAN]:
+
+Keberhasilan rekayasa-balik hoverboard adalah kritis. Kegagalan pada tahap ini akan memaksa perubahan desain fundamental pada sistem gerak robot.
+
+Log Project Asybot #000003 
+19/09/2025 11:08
+
+[TUJUAN SAAT INI]:
+Mengimplementasikan komponen AI nyata di sisi backend (server Python), menggantikan logika simulasi.
+
+[PROGRES YANG TELAH DIBUAT]:
+
+Sistem input audio pada klien (asybot_face_ui.html) telah diperbaiki dan divalidasi menggunakan Native Web Audio API, menyelesaikan masalah deteksi mikrofon.
+
+Alur komunikasi end-to-end (Klien -> STT -> WebSocket -> Server -> WebSocket -> Klien -> TTS) telah terbukti berfungsi dengan andal.
+
+[LANGKAH BERIKUTNYA]:
+
+Mengintegrasikan Large Language Model (Google Gemini) ke dalam server Python (websocket_server.py) untuk menghasilkan respons cerdas berdasarkan input teks dari klien.
+
+[RISIKO/HAMBATAN]:
+
+Tidak ada risiko perangkat lunak yang signifikan pada tahap ini. Fokus beralih ke kualitas respons AI dan latensi jaringan.
