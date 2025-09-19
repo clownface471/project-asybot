@@ -3,26 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Asybot UI - Lip-Sync Integration</title>
+    <title>Asybot UI - WebSocket Client</title>
     <style>
         body { margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #121212; overflow: hidden; color: #ccc; font-family: monospace; }
-        .prompt { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 24px; text-align: center; }
-        #transcript-display { position: absolute; top: 20px; left: 20px; right: 20px; text-align: center; font-size: 28px; color: #fff; background-color: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; min-height: 40px; transition: background-color 0.3s; }
-        #transcript-display.user-speaking { background-color: rgba(60, 120, 255, 0.4); }
-        #transcript-display.asybot-speaking { background-color: rgba(40, 200, 120, 0.4); }
         #status-indicator { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); font-size: 18px; color: #888; }
     </style>
 </head>
 <body>
-    <div id="start-prompt" class="prompt">Klik untuk memulai...</div>
-    <div id="transcript-display"></div>
-    <div id="status-indicator">STATUS: IDLE</div>
+    <div id="status-indicator">STATUS: CONNECTING...</div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/addons/p5.sound.min.js"></script>
-
     <script>
-        // --- MODUL 1: API KONTROL WAJAH (DIPERBARUI UNTUK LIP-SYNC) ---
+        // --- MODUL 1: API KONTROL WAJAH (Tidak berubah signifikan) ---
         const AsybotFace = {
             state: 'NEUTRAL', viseme: 'default', lerpFactor: 0.2, bounceFactor: 0,
             current: { eyeSize: 0, mouthWidth: 0, mouthHeight: 0 },
@@ -33,6 +25,7 @@
             update: function() { this.bounceFactor = sin(frameCount * 0.05) * 5; this.current.eyeSize = lerp(this.current.eyeSize, this.target.eyeSize, this.lerpFactor); if (this.viseme === 'default') { this.current.mouthWidth = lerp(this.current.mouthWidth, this.target.mouthWidth, this.lerpFactor); this.current.mouthHeight = lerp(this.current.mouthHeight, this.target.mouthHeight, this.lerpFactor); } else { let visemeTarget = this.getVisemeTarget(); this.current.mouthWidth = lerp(this.current.mouthWidth, visemeTarget.w, 0.5); this.current.mouthHeight = lerp(this.current.mouthHeight, visemeTarget.h, 0.5); } },
             getVisemeTarget: function() { switch (this.viseme) { case 'a': return { w: width / 7, h: height / 9 }; case 'i': return { w: width / 5, h: 5 }; case 'u': return { w: width / 14, h: height / 12 }; case 'e': return { w: width / 6, h: height / 11 }; case 'o': return { w: width / 8, h: height / 8 }; default: return { w: this.target.mouthWidth, h: this.target.mouthHeight }; } },
             draw: function() {
+                background("#121212");
                 let eyeY = height / 2 - height / 10; fill(255); noStroke(); ellipse(width / 2 - width / 10, eyeY + this.bounceFactor, this.current.eyeSize, this.current.eyeSize); ellipse(width / 2 + width / 10, eyeY + this.bounceFactor, this.current.eyeSize, this.current.eyeSize);
                 let mouthY = height / 2 + height / 12;
                 stroke(255); strokeWeight(10); noFill();
@@ -45,100 +38,88 @@
             }
         };
 
-        const UIManager = {
-            transcriptDisplay: null, statusIndicator: null,
-            init: function() { this.transcriptDisplay = document.getElementById('transcript-display'); this.statusIndicator = document.getElementById('status-indicator'); },
-            updateStatus: function(status) { this.statusIndicator.innerText = `STATUS: ${status}`; },
-            displayUserTranscript: function(text) { this.transcriptDisplay.innerText = text; this.transcriptDisplay.className = 'user-speaking'; },
-            displayAsybotResponse: function(text) { this.transcriptDisplay.innerText = text; this.transcriptDisplay.className = 'asybot-speaking'; },
-            clearDisplay: function() { this.transcriptDisplay.innerText = ''; this.transcriptDisplay.className = ''; }
-        };
-        
+        // --- MODUL TTS (Sedikit berubah) ---
         const AsybotTTS = {
             isSpeaking: false,
-            init: function() { if (!('speechSynthesis' in window)) { console.error("Browser tidak mendukung Web Speech API (TTS)."); return; } },
-            findVowelInWord: function(word) {
-                const vowels = ['a', 'i', 'u', 'e', 'o'];
-                for (let char of word.toLowerCase()) {
-                    if (vowels.includes(char)) return char;
-                }
-                return 'a';
-            },
-            speak: function(text, onEndCallback) {
+            init: function() { /* Inisialisasi tidak diperlukan lagi di sini */ },
+            findVowelInWord: function(word) { const vowels = ['a', 'i', 'u', 'e', 'o']; for (let char of word.toLowerCase()) { if (vowels.includes(char)) return char; } return 'a'; },
+            speak: function(text) {
                 if (this.isSpeaking) return;
                 const utterance = new SpeechSynthesisUtterance(text);
                 utterance.lang = 'id-ID';
-                utterance.onstart = () => { this.isSpeaking = true; UIManager.updateStatus('SPEAKING'); UIManager.displayAsybotResponse(text); console.log("TTS: Mulai berbicara..."); };
-                utterance.onboundary = (event) => {
-                    if (event.name === 'word') {
-                        const word = text.substring(event.charIndex, text.indexOf(' ', event.charIndex));
-                        const vowel = this.findVowelInWord(word);
-                        AsybotFace.setViseme(vowel);
-                    }
-                };
-                utterance.onend = () => { this.isSpeaking = false; AsybotFace.setViseme('default'); UIManager.updateStatus('IDLE'); console.log("TTS: Selesai berbicara."); if (onEndCallback) onEndCallback(); };
+                utterance.onstart = () => { this.isSpeaking = true; UIManager.updateStatus('SPEAKING'); };
+                utterance.onboundary = (event) => { if (event.name === 'word') { const word = text.substring(event.charIndex, text.indexOf(' ', event.charIndex)); const vowel = this.findVowelInWord(word); AsybotFace.setViseme(vowel); } };
+                utterance.onend = () => { this.isSpeaking = false; AsybotFace.setViseme('default'); UIManager.updateStatus('CONNECTED'); };
                 window.speechSynthesis.speak(utterance);
             }
         };
+        
+        // --- MODUL UI MANAGER (Sedikit berubah) ---
+        const UIManager = {
+            statusIndicator: null,
+            init: function() { this.statusIndicator = document.getElementById('status-indicator'); },
+            updateStatus: function(status) { this.statusIndicator.innerText = `STATUS: ${status}`; },
+        };
 
-        const AsybotLLM = {
-            isProcessing: false, apiKey: "", apiUrl: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent`,
-            getResponse: async function(prompt) {
-                if (this.isProcessing) return;
-                this.isProcessing = true; UIManager.updateStatus('THINKING_RESPONSE');
-                if (!this.apiKey) {
-                    console.log("LLM (SIMULASI): Menerima prompt -", prompt);
-                    await new Promise(resolve => setTimeout(resolve, 1500));
-                    const simulatedResponse = `Ini adalah jawaban simulasi untuk: "${prompt}"`;
-                    console.log("LLM (SIMULASI): Menghasilkan respons -", simulatedResponse);
-                    this.isProcessing = false;
-                    AsybotTTS.speak(simulatedResponse, () => UIManager.clearDisplay());
-                    return;
+        // --- MODUL BARU: WEBSOCKET CLIENT ---
+        const AsybotSocketClient = {
+            socket: null,
+            init: function() {
+                // Ganti 'localhost' dengan alamat IP Jetson saat implementasi
+                const serverAddress = "ws://localhost:8765";
+                this.socket = new WebSocket(serverAddress);
+
+                this.socket.onopen = (event) => {
+                    console.log("CLIENT: Terhubung ke server WebSocket.");
+                    UIManager.updateStatus("CONNECTED");
+                };
+
+                this.socket.onmessage = (event) => {
+                    console.log(`CLIENT < Menerima pesan: ${event.data}`);
+                    const data = JSON.parse(event.data);
+                    this.handleCommand(data);
+                };
+
+                this.socket.onclose = (event) => {
+                    console.log("CLIENT: Koneksi ke server terputus.");
+                    UIManager.updateStatus("DISCONNECTED");
+                };
+
+                this.socket.onerror = (error) => {
+                    console.error("CLIENT: WebSocket Error:", error);
+                    UIManager.updateStatus("ERROR");
+                };
+            },
+            handleCommand: function(data) {
+                if (!data.command || !data.hasOwnProperty('value')) return;
+                switch(data.command) {
+                    case "setExpression":
+                        AsybotFace.setExpression(data.value);
+                        break;
+                    case "speak":
+                        AsybotTTS.speak(data.value);
+                        break;
+                    // Tambahkan perintah lain di sini di masa depan
                 }
-                try {
-                    const payload = { contents: [{ parts: [{ text: prompt }] }] };
-                    const response = await fetch(`${this.apiUrl}?key=${this.apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                    const result = await response.json();
-                    const textResponse = result.candidates?.[0]?.content?.parts?.[0]?.text;
-                    if (textResponse) {
-                        AsybotTTS.speak(textResponse, () => UIManager.clearDisplay());
-                    } else { throw new Error("Struktur respons API tidak valid."); }
-                } catch (error) {
-                    console.error("LLM Error:", error);
-                    AsybotTTS.speak("Maaf, terjadi kesalahan saat saya mencoba berpikir.", () => UIManager.clearDisplay());
-                } finally { this.isProcessing = false; }
             }
         };
 
-        const AsybotSTT = {
-            recognition: null, isRecognizing: false,
-            init: function() {
-                window.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-                if (!window.SpeechRecognition) { console.error("Browser tidak mendukung Web Speech API."); UIManager.displayUserTranscript("Browser Anda tidak mendukung Speech-to-Text."); return; }
-                this.recognition = new SpeechRecognition(); this.recognition.continuous = true; this.recognition.interimResults = true; this.recognition.lang = 'id-ID';
-                this.recognition.onstart = () => { this.isRecognizing = true; AsybotFace.setExpression('THINKING'); UIManager.updateStatus('LISTENING'); console.log("STT: Mulai mendengarkan..."); };
-                this.recognition.onend = () => { this.isRecognizing = false; if (!AsybotTTS.isSpeaking && !AsybotLLM.isProcessing) { AsybotFace.setExpression('NEUTRAL'); UIManager.updateStatus('IDLE'); } console.log("STT: Berhenti mendengarkan."); };
-                this.recognition.onresult = (event) => { let interim_transcript = ''; let final_transcript = ''; for (let i = event.resultIndex; i < event.results.length; ++i) { if (event.results[i].isFinal) { final_transcript += event.results[i][0].transcript; } else { interim_transcript += event.results[i][0].transcript; } } UIManager.displayUserTranscript(final_transcript + interim_transcript); if (final_transcript.trim()) { console.log("Final Transcript:", final_transcript); AsybotLLM.getResponse(final_transcript.trim()); } };
-                this.recognition.onerror = (event) => { console.error("STT Error:", event.error); };
-            },
-            start: function() { if (this.recognition && !this.isRecognizing) { UIManager.clearDisplay(); this.recognition.start(); } },
-            stop: function() { if (this.recognition && this.isRecognizing) { this.recognition.stop(); } }
-        };
-
-        const AsybotAudio = {
-            mic: null, isListening: false, currentLevel: 0, smoothing: 0.1, listeningThreshold: 0.02, isSoundDetected: false, soundStopDelay: 1500, soundStopTimer: null,
-            init: function() { this.mic = new p5.AudioIn(); this.mic.start(() => { console.log("Microphone activated."); this.isListening = true; document.getElementById('start-prompt').style.display = 'none'; }, (err) => { console.error("Microphone access denied or failed:", err); document.getElementById('start-prompt').innerText = 'Error: Gagal mengakses mikrofon.'; }); },
-            update: function() { if (!this.isListening || AsybotLLM.isProcessing || AsybotTTS.isSpeaking) return; this.currentLevel = lerp(this.currentLevel, this.mic.getLevel(), this.smoothing); if (this.currentLevel > this.listeningThreshold) { if (!this.isSoundDetected) { this.isSoundDetected = true; AsybotSTT.start(); } clearTimeout(this.soundStopTimer); } else if (this.isSoundDetected) { this.soundStopTimer = setTimeout(() => { this.isSoundDetected = false; AsybotSTT.stop(); }, this.soundStopDelay); } },
-            drawDebugVisualizer: function() { if (!this.isListening) return; let vizDiameter = map(this.currentLevel, 0, 1, 50, 400); fill(255, 50); noStroke(); circle(width / 2, height - 150, vizDiameter); let thresholdY = map(this.listeningThreshold, 0, 1, 50, 400); stroke(255, 0, 0, 150); strokeWeight(2); line(width/2 - 200, height - 150 - thresholdY/2, width/2 + 200, height - 150 - thresholdY/2); }
-        };
-        
         // --- DRIVER UTAMA APLIKASI ---
-        let audioStarted = false;
-        function setup() { createCanvas(windowWidth, windowHeight); ellipseMode(CENTER); AsybotFace.init(); UIManager.init(); AsybotSTT.init(); AsybotTTS.init(); }
-        function draw() { background("#121212"); AsybotFace.update(); AsybotFace.draw(); if (audioStarted) { AsybotAudio.update(); AsybotAudio.drawDebugVisualizer(); } }
-        function mousePressed() { if (!audioStarted) { userStartAudio(); AsybotAudio.init(); audioStarted = true; } }
-        function windowResized() { resizeCanvas(windowWidth, windowHeight); AsybotFace.setExpression(AsybotFace.state, true); }
+        function setup() {
+            createCanvas(windowWidth, windowHeight);
+            ellipseMode(CENTER);
+            AsybotFace.init();
+            UIManager.init();
+            AsybotSocketClient.init();
+        }
+        function draw() {
+            AsybotFace.update();
+            AsybotFace.draw();
+        }
+        function windowResized() {
+            resizeCanvas(windowWidth, windowHeight);
+            AsybotFace.setExpression(AsybotFace.state, true);
+        }
     </script>
 </body>
 </html>
