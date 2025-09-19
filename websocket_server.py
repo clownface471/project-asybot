@@ -1,77 +1,83 @@
 # Server WebSocket untuk Asybot (Otak Robot)
-# Berjalan di Jetson Nano / PC untuk pengembangan.
-# Memerlukan instalasi: pip install websockets
+# Versi 4 - Menggunakan pola modern yang kompatibel dengan websockets >= 10.x
 
 import asyncio
 import websockets
 import json
 
-# Menyimpan koneksi klien (tablet) yang terhubung
-CONNECTED_CLIENT = None
+# Menggunakan set untuk menyimpan koneksi klien.
+# Set lebih efisien untuk menambah/menghapus dan mencegah duplikat.
+CONNECTED_CLIENTS = set()
 
-# Fungsi untuk mengirim perintah ke tablet
-async def send_command(command, value):
-    global CONNECTED_CLIENT
-    if CONNECTED_CLIENT:
-        try:
-            message = json.dumps({"command": command, "value": value})
-            await CONNECTED_CLIENT.send(message)
-            print(f"Server > Mengirim perintah: {message}")
-        except websockets.exceptions.ConnectionClosed:
-            print("Server > Koneksi ke klien terputus.")
-            CONNECTED_CLIENT = None
-    else:
-        print("Server > Tidak ada klien yang terhubung untuk dikirimi perintah.")
+async def send_command_to_all(command, value):
+    # Kirim perintah ke semua klien yang terhubung (meskipun kita hanya berharap ada satu)
+    if CONNECTED_CLIENTS:
+        message = json.dumps({"command": command, "value": value})
+        print(f"Server > Mengirim perintah: {message}")
+        # Gunakan asyncio.gather untuk mengirim ke semua klien secara bersamaan
+        # Ini mencegah satu klien yang lambat menghambat yang lain
+        await asyncio.gather(
+            *[client.send(message) for client in CONNECTED_CLIENTS]
+        )
 
-# Handler utama untuk setiap koneksi yang masuk
-async def handler(websocket, path):
-    global CONNECTED_CLIENT
-    # Hanya izinkan satu koneksi pada satu waktu
-    if CONNECTED_CLIENT:
-        print("Server > Menolak koneksi baru, sudah ada klien yang terhubung.")
+async def handler(websocket):
+    """
+    Handler untuk setiap koneksi yang masuk.
+    Ini adalah pola modern yang direkomendasikan.
+    """
+    # Tolak koneksi jika sudah ada yang terhubung.
+    if len(CONNECTED_CLIENTS) >= 1:
+        print(f"Server > Menolak koneksi dari {websocket.remote_address}, klien sudah ada.")
         await websocket.close(1013, "Server sibuk")
         return
-        
-    CONNECTED_CLIENT = websocket
+
+    # Daftarkan koneksi baru
+    CONNECTED_CLIENTS.add(websocket)
     print(f"Server > Klien (Tablet) terhubung dari {websocket.remote_address}")
+    
     try:
-        # Loop untuk mendengarkan pesan dari klien (jika ada)
+        # Loop untuk mendengarkan pesan dari klien (jika diperlukan di masa depan)
         async for message in websocket:
             print(f"Server < Menerima pesan: {message}")
-            # Di sini kita bisa menambahkan logika untuk memproses data dari tablet (misal: status, data sensor)
+            # Logika untuk memproses pesan dari klien bisa ditambahkan di sini
     except websockets.exceptions.ConnectionClosed:
-        print("Server > Koneksi klien terputus.")
+        print(f"Server > Koneksi dari {websocket.remote_address} ditutup dengan normal.")
     finally:
-        CONNECTED_CLIENT = None
+        # Hapus koneksi saat terputus, pastikan koneksi ada di set sebelum menghapus
+        if websocket in CONNECTED_CLIENTS:
+            CONNECTED_CLIENTS.remove(websocket)
+        print(f"Server > Klien dari {websocket.remote_address} dihapus. Klien tersisa: {len(CONNECTED_CLIENTS)}")
 
-# Fungsi untuk menjalankan simulasi perintah dari otak
+
 async def command_simulator():
     print("Server > Simulator Perintah dimulai. Menunggu klien terhubung...")
     while True:
-        # Tunggu hingga ada klien yang terhubung
-        if CONNECTED_CLIENT:
+        # Cek setiap 2 detik apakah ada klien yang terhubung
+        if CONNECTED_CLIENTS:
             await asyncio.sleep(3)
-            await send_command("setExpression", "HAPPY")
+            await send_command_to_all("setExpression", "HAPPY")
             
             await asyncio.sleep(2)
-            await send_command("speak", "Halo Mori, ini adalah tes dari server WebSocket.")
+            await send_command_to_all("speak", "Halo Mori, server sekarang menggunakan API modern.")
             
             # Tunggu TTS selesai (estimasi)
-            await asyncio.sleep(5)
-            await send_command("setExpression", "NEUTRAL")
+            await asyncio.sleep(6)
+            await send_command_to_all("setExpression", "NEUTRAL")
         
         await asyncio.sleep(2)
 
-
 async def main():
-    # Jalankan server WebSocket
-    server_task = websockets.serve(handler, "localhost", 8765)
-    
-    # Jalankan simulator perintah secara bersamaan
-    simulator_task = command_simulator()
+    # Jalankan simulator perintah sebagai background task
+    asyncio.create_task(command_simulator())
 
-    print("Server > Server WebSocket berjalan di ws://localhost:8765")
-    await asyncio.gather(server_task, simulator_task)
+    # Jalankan server menggunakan pola modern yang benar
+    async with websockets.serve(handler, "localhost", 8765):
+        print("Server > Server WebSocket berjalan di ws://localhost:8765")
+        await asyncio.Future()  # Berjalan selamanya
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\nServer > Server dihentikan.")
+
