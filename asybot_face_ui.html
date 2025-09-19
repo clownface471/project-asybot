@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Asybot Face Interface</title>
+    <title>Asybot Face Interface - State Control</title>
     <style>
         /* CSS untuk memastikan canvas mengisi seluruh layar dan berlatar belakang gelap */
         body {
@@ -15,68 +15,153 @@
             height: 100vh;
             background-color: #121212;
             overflow: hidden;
+            color: #ccc;
+            font-family: monospace;
+        }
+        /* Style untuk teks instruksi */
+        .instructions {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: 16px;
         }
     </style>
 </head>
 <body>
+    <div class="instructions">
+        Tekan tombol: [1] Netral, [2] Senang, [3] Terkejut
+    </div>
+
     <!-- Script untuk library p5.js dari CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
 
     <script>
-        // Variabel untuk menyimpan properti wajah
-        let eyeSize, eyeY, mouthWidth, mouthHeight, mouthY;
-        let bounceFactor = 0; // Faktor untuk animasi 'bouncy'
+        // --- STATE & PROPERTI GLOBAL ---
+        let expressionState = 'NEUTRAL'; // State awal
 
-        // Fungsi setup() dari p5.js, dijalankan sekali saat program dimulai
+        // Properti yang digambar saat ini (untuk transisi halus)
+        let currentEyeSize, currentMouthWidth, currentMouthHeight;
+
+        // Properti target berdasarkan state
+        let targetEyeSize, targetMouthWidth, targetMouthHeight;
+
+        const LERP_FACTOR = 0.1; // Kecepatan transisi animasi (0.0 - 1.0)
+        let bounceFactor = 0;
+
+        // --- FUNGSI UTAMA P5.JS ---
         function setup() {
-            // Membuat canvas yang ukurannya sesuai dengan jendela browser
             createCanvas(windowWidth, windowHeight);
-            // Mengatur mode gambar agar menggunakan sudut/radius
             ellipseMode(RADIUS);
+
+            // Inisialisasi properti awal
+            initializeProperties();
         }
 
-        // Fungsi draw() dari p5.js, dijalankan berulang kali (loop animasi)
         function draw() {
-            // Mengatur latar belakang menjadi hitam setiap frame
             background("#121212");
 
-            // --- PENGATURAN DINAMIS & ANIMASI ---
-            // Menggunakan fungsi sinus untuk membuat efek 'bouncy' yang halus dan berulang
-            // frameCount adalah variabel p5.js yang terus bertambah
+            // Update faktor 'bouncy' untuk animasi yang hidup
             bounceFactor = sin(frameCount * 0.05) * 5;
 
-            // Mengatur posisi dan ukuran elemen wajah berdasarkan ukuran canvas
-            // Ini membuat wajah responsif terhadap ukuran layar
-            eyeSize = width / 15;
-            eyeY = height / 2 - height / 10;
-            mouthY = height / 2 + height / 12;
-            mouthWidth = width / 8;
-            mouthHeight = height / 15 + bounceFactor; // Mulut akan 'memantul'
+            // --- ANIMASI TRANSISI HALUS (LERP) ---
+            // Secara bertahap mendekati nilai target setiap frame
+            currentEyeSize = lerp(currentEyeSize, targetEyeSize, LERP_FACTOR);
+            currentMouthWidth = lerp(currentMouthWidth, targetMouthWidth, LERP_FACTOR);
+            currentMouthHeight = lerp(currentMouthHeight, targetMouthHeight, LERP_FACTOR);
 
             // --- MENGGAMBAR ELEMEN WAJAH ---
+            drawEyes();
+            drawMouth();
+        }
 
-            // Mata Kiri
-            fill(255); // Warna putih
-            noStroke(); // Tanpa garis tepi
-            ellipse(width / 2 - width / 10, eyeY + bounceFactor, eyeSize, eyeSize);
+        // --- FUNGSI KONTROL ---
 
-            // Mata Kanan
-            ellipse(width / 2 + width / 10, eyeY + bounceFactor, eyeSize, eyeSize);
+        // Fungsi untuk mengubah state dan menetapkan target properti baru
+        function setExpression(newState) {
+            expressionState = newState;
+            console.log("State changed to: " + newState); // Log untuk debugging
 
+            // Mengatur target properti baru berdasarkan state
+            switch (expressionState) {
+                case 'HAPPY':
+                    targetEyeSize = width / 14;
+                    targetMouthWidth = width / 6;
+                    targetMouthHeight = height / 10;
+                    break;
+                case 'SURPRISED':
+                    targetEyeSize = width / 12;
+                    targetMouthWidth = width / 12;
+                    targetMouthHeight = height / 8;
+                    break;
+                case 'NEUTRAL':
+                default:
+                    targetEyeSize = width / 15;
+                    targetMouthWidth = width / 8;
+                    targetMouthHeight = height / 15;
+                    break;
+            }
+        }
 
-            // Mulut (Senyum Garis Melengkung)
-            noFill(); // Hanya garis, tanpa isi
-            stroke(255); // Warna garis putih
-            strokeWeight(10); // Ketebalan garis
-            // arc(x, y, width, height, startAngle, stopAngle)
-            arc(width / 2, mouthY, mouthWidth, mouthHeight, 0, PI);
+        // Event listener untuk input keyboard
+        function keyPressed() {
+            if (key === '1') {
+                setExpression('NEUTRAL');
+            } else if (key === '2') {
+                setExpression('HAPPY');
+            } else if (key === '3') {
+                setExpression('SURPRISED');
+            }
         }
 
         // Fungsi ini dipanggil setiap kali ukuran jendela browser diubah
         function windowResized() {
-            // Mengubah ukuran canvas agar sesuai dengan ukuran jendela yang baru
             resizeCanvas(windowWidth, windowHeight);
+            // Re-initialize properties agar responsif
+            initializeProperties();
+        }
+
+        // --- FUNGSI PEMBANTU (HELPERS) ---
+
+        // Menggambar kedua mata
+        function drawEyes() {
+            let eyeY = height / 2 - height / 10;
+            fill(255);
+            noStroke();
+            ellipse(width / 2 - width / 10, eyeY + bounceFactor, currentEyeSize, currentEyeSize);
+            ellipse(width / 2 + width / 10, eyeY + bounceFactor, currentEyeSize, currentEyeSize);
+        }
+
+        // Menggambar mulut sesuai dengan state saat ini
+        function drawMouth() {
+            let mouthY = height / 2 + height / 12;
+            stroke(255);
+            strokeWeight(10);
+
+            switch (expressionState) {
+                case 'SURPRISED':
+                    // Mulut terkejut (lingkaran)
+                    fill(18, 18, 18); // Isi mulut dengan warna background
+                    ellipse(width / 2, mouthY + currentMouthHeight / 2, currentMouthWidth, currentMouthHeight);
+                    break;
+                case 'NEUTRAL':
+                case 'HAPPY':
+                default:
+                    // Mulut senyum (garis melengkung)
+                    noFill();
+                    arc(width / 2, mouthY, currentMouthWidth, currentMouthHeight + bounceFactor, 0, PI);
+                    break;
+            }
+        }
+        
+        // Inisialisasi/reset properti saat setup atau resize
+        function initializeProperties() {
+            currentEyeSize = targetEyeSize = width / 15;
+            currentMouthWidth = targetMouthWidth = width / 8;
+            currentMouthHeight = targetMouthHeight = height / 15;
+            // Panggil setExpression untuk memastikan target sesuai state awal
+            setExpression(expressionState);
         }
     </script>
 </body>
 </html>
+
