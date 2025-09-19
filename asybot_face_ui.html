@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Asybot Face Interface - API Control</title>
+    <title>Asybot Face Interface - Brain Simulation</title>
     <style>
         body {
             margin: 0;
@@ -14,113 +14,59 @@
             height: 100vh;
             background-color: #121212;
             overflow: hidden;
-            color: #ccc;
-            font-family: monospace;
-        }
-        .instructions {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            font-size: 16px;
         }
     </style>
 </head>
 <body>
-    <div class="instructions">
-        Tekan tombol: [1] Netral, [2] Senang, [3] Terkejut, [4] Berpikir
-    </div>
-
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
-
     <script>
-        // --- API KONTROL WAJAH ASYBOT ---
-        // Semua logika dibungkus dalam satu objek untuk kebersihan kode dan kontrol eksternal.
+        // --- API KONTROL WAJAH ASYBOT (TIDAK BERUBAH) ---
+        // Objek ini sekarang siap untuk menerima perintah dari modul lain.
         const AsybotFace = {
             state: 'NEUTRAL',
             lerpFactor: 0.1,
             bounceFactor: 0,
-            
-            // Properti saat ini (untuk transisi)
-            current: {
-                eyeSize: 0,
-                mouthWidth: 0,
-                mouthHeight: 0
-            },
-            
-            // Properti target (berdasarkan state)
-            target: {
-                eyeSize: 0,
-                mouthWidth: 0,
-                mouthHeight: 0
-            },
-
-            // Inisialisasi properti berdasarkan ukuran layar
+            current: { eyeSize: 0, mouthWidth: 0, mouthHeight: 0 },
+            target: { eyeSize: 0, mouthWidth: 0, mouthHeight: 0 },
             init: function() {
                 this.current.eyeSize = this.target.eyeSize = width / 15;
                 this.current.mouthWidth = this.target.mouthWidth = width / 8;
                 this.current.mouthHeight = this.target.mouthHeight = height / 15;
-                this.setExpression(this.state, true); // Panggil untuk set target awal
+                this.setExpression(this.state, true);
             },
-
-            // FUNGSI API PUBLIK: Mengubah ekspresi wajah
             setExpression: function(newState, immediate = false) {
-                if (this.state === newState && !immediate) return; // Hindari kalkulasi ulang yang tidak perlu
-                
+                if (this.state === newState && !immediate) return;
                 this.state = newState;
                 console.log("API CALL: setExpression('" + newState + "')");
-
                 switch (this.state) {
                     case 'HAPPY':
-                        this.target.eyeSize = width / 14;
-                        this.target.mouthWidth = width / 6;
-                        this.target.mouthHeight = height / 10;
+                        this.target.eyeSize = width / 14; this.target.mouthWidth = width / 6; this.target.mouthHeight = height / 10;
                         break;
                     case 'SURPRISED':
-                        this.target.eyeSize = width / 12;
-                        this.target.mouthWidth = width / 12;
-                        this.target.mouthHeight = height / 8;
+                        this.target.eyeSize = width / 12; this.target.mouthWidth = width / 12; this.target.mouthHeight = height / 8;
                         break;
                     case 'THINKING':
-                        this.target.eyeSize = width / 18; // Mata sedikit menyipit
-                        this.target.mouthWidth = width / 7;
-                        this.target.mouthHeight = 5; // Mulut jadi garis tipis
+                        this.target.eyeSize = width / 18; this.target.mouthWidth = width / 7; this.target.mouthHeight = 5;
                         break;
-                    case 'NEUTRAL':
-                    default:
-                        this.target.eyeSize = width / 15;
-                        this.target.mouthWidth = width / 8;
-                        this.target.mouthHeight = height / 15;
+                    default: // NEUTRAL
+                        this.target.eyeSize = width / 15; this.target.mouthWidth = width / 8; this.target.mouthHeight = height / 15;
                         break;
                 }
-
-                // Jika 'immediate' true, langsung set nilai saat ini (berguna saat resize)
-                if (immediate) {
-                    this.current = {...this.target};
-                }
+                if (immediate) { this.current = {...this.target}; }
             },
-            
-            // Update state internal setiap frame (kalkulasi animasi)
             update: function() {
                 this.bounceFactor = sin(frameCount * 0.05) * 5;
                 this.current.eyeSize = lerp(this.current.eyeSize, this.target.eyeSize, this.lerpFactor);
                 this.current.mouthWidth = lerp(this.current.mouthWidth, this.target.mouthWidth, this.lerpFactor);
                 this.current.mouthHeight = lerp(this.current.mouthHeight, this.target.mouthHeight, this.lerpFactor);
             },
-
-            // Menggambar wajah ke canvas
             draw: function() {
-                // Gambar mata
                 let eyeY = height / 2 - height / 10;
-                fill(255);
-                noStroke();
+                fill(255); noStroke();
                 ellipse(width / 2 - width / 10, eyeY + this.bounceFactor, this.current.eyeSize, this.current.eyeSize);
                 ellipse(width / 2 + width / 10, eyeY + this.bounceFactor, this.current.eyeSize, this.current.eyeSize);
-
-                // Gambar mulut
                 let mouthY = height / 2 + height / 12;
-                stroke(255);
-                strokeWeight(10);
-
+                stroke(255); strokeWeight(10);
                 switch (this.state) {
                     case 'SURPRISED':
                         fill(18, 18, 18);
@@ -128,12 +74,9 @@
                         break;
                     case 'THINKING':
                         noFill();
-                        // Buat mulut bergelombang untuk efek 'berpikir'
                         let wiggle = sin(frameCount * 0.2) * 5;
                         line(width / 2 - this.current.mouthWidth / 2, mouthY + wiggle, width / 2 + this.current.mouthWidth / 2, mouthY + wiggle);
                         break;
-                    case 'NEUTRAL':
-                    case 'HAPPY':
                     default:
                         noFill();
                         arc(width / 2, mouthY, this.current.mouthWidth, this.current.mouthHeight + this.bounceFactor, 0, PI);
@@ -142,12 +85,34 @@
             }
         };
 
-        // --- P5.JS BOILERPLATE ---
-        // Fungsi p5.js sekarang hanya bertindak sebagai 'driver' untuk API AsybotFace.
+        // --- SIMULATOR OTAK ASYBOT ---
+        // Modul ini bertindak sebagai 'otak' yang mengontrol wajah.
+        const AsybotBrainSimulator = {
+            // Daftar ekspresi yang mungkin
+            expressions: ['NEUTRAL', 'HAPPY', 'THINKING', 'SURPRISED'],
+            // Interval perubahan ekspresi dalam milidetik
+            changeInterval: 3000, // 3 detik
+
+            start: function() {
+                console.log("Brain Simulator Activated.");
+                // Set interval untuk mengubah ekspresi secara periodik
+                setInterval(() => {
+                    // Pilih ekspresi acak dari daftar
+                    const randomIndex = Math.floor(Math.random() * this.expressions.length);
+                    const randomExpression = this.expressions[randomIndex];
+
+                    // Panggil API wajah untuk mengubah ekspresi
+                    AsybotFace.setExpression(randomExpression);
+                }, this.changeInterval);
+            }
+        };
+
+        // --- P5.JS DRIVER ---
         function setup() {
             createCanvas(windowWidth, windowHeight);
             ellipseMode(RADIUS);
-            AsybotFace.init();
+            AsybotFace.init(); // Inisialisasi wajah
+            AsybotBrainSimulator.start(); // Mulai simulasi otak
         }
 
         function draw() {
@@ -156,16 +121,9 @@
             AsybotFace.draw();
         }
 
-        function keyPressed() {
-            if (key === '1') AsybotFace.setExpression('NEUTRAL');
-            else if (key === '2') AsybotFace.setExpression('HAPPY');
-            else if (key === '3') AsybotFace.setExpression('SURPRISED');
-            else if (key === '4') AsybotFace.setExpression('THINKING');
-        }
-
         function windowResized() {
             resizeCanvas(windowWidth, windowHeight);
-            AsybotFace.setExpression(AsybotFace.state, true); // Re-kalkulasi target & set properti saat ini
+            AsybotFace.setExpression(AsybotFace.state, true);
         }
     </script>
 </body>
