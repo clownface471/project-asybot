@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Asybot Face Interface</title>
+    <style>
+        /* CSS untuk memastikan canvas mengisi seluruh layar dan berlatar belakang gelap */
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #121212;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+    <!-- Script untuk library p5.js dari CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+
+    <script>
+        // Variabel untuk menyimpan properti wajah
+        let eyeSize, eyeY, mouthWidth, mouthHeight, mouthY;
+        let bounceFactor = 0; // Faktor untuk animasi 'bouncy'
+
+        // Fungsi setup() dari p5.js, dijalankan sekali saat program dimulai
+        function setup() {
+            // Membuat canvas yang ukurannya sesuai dengan jendela browser
+            createCanvas(windowWidth, windowHeight);
+            // Mengatur mode gambar agar menggunakan sudut/radius
+            ellipseMode(RADIUS);
+        }
+
+        // Fungsi draw() dari p5.js, dijalankan berulang kali (loop animasi)
+        function draw() {
+            // Mengatur latar belakang menjadi hitam setiap frame
+            background("#121212");
+
+            // --- PENGATURAN DINAMIS & ANIMASI ---
+            // Menggunakan fungsi sinus untuk membuat efek 'bouncy' yang halus dan berulang
+            // frameCount adalah variabel p5.js yang terus bertambah
+            bounceFactor = sin(frameCount * 0.05) * 5;
+
+            // Mengatur posisi dan ukuran elemen wajah berdasarkan ukuran canvas
+            // Ini membuat wajah responsif terhadap ukuran layar
+            eyeSize = width / 15;
+            eyeY = height / 2 - height / 10;
+            mouthY = height / 2 + height / 12;
+            mouthWidth = width / 8;
+            mouthHeight = height / 15 + bounceFactor; // Mulut akan 'memantul'
+
+            // --- MENGGAMBAR ELEMEN WAJAH ---
+
+            // Mata Kiri
+            fill(255); // Warna putih
+            noStroke(); // Tanpa garis tepi
+            ellipse(width / 2 - width / 10, eyeY + bounceFactor, eyeSize, eyeSize);
+
+            // Mata Kanan
+            ellipse(width / 2 + width / 10, eyeY + bounceFactor, eyeSize, eyeSize);
+
+
+            // Mulut (Senyum Garis Melengkung)
+            noFill(); // Hanya garis, tanpa isi
+            stroke(255); // Warna garis putih
+            strokeWeight(10); // Ketebalan garis
+            // arc(x, y, width, height, startAngle, stopAngle)
+            arc(width / 2, mouthY, mouthWidth, mouthHeight, 0, PI);
+        }
+
+        // Fungsi ini dipanggil setiap kali ukuran jendela browser diubah
+        function windowResized() {
+            // Mengubah ukuran canvas agar sesuai dengan ukuran jendela yang baru
+            resizeCanvas(windowWidth, windowHeight);
+        }
+    </script>
+</body>
+</html>
