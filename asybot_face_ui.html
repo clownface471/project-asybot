@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Asybot UI - Audio Input</title>
+    <title>Asybot UI - Audio Reaction</title>
     <style>
         body { margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #121212; overflow: hidden; color: #ccc; font-family: monospace; }
         .prompt { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 24px; }
@@ -12,7 +12,6 @@
 <body>
     <div id="start-prompt" class="prompt">Klik untuk memulai...</div>
 
-    <!-- PENTING: Menambahkan library p5.sound.min.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/addons/p5.sound.min.js"></script>
 
@@ -23,35 +22,25 @@
             current: { eyeSize: 0, mouthWidth: 0, mouthHeight: 0 },
             target: { eyeSize: 0, mouthWidth: 0, mouthHeight: 0 },
             init: function() { this.setExpression(this.state, true); },
-            setExpression: function(newState, immediate = false) {
-                if (this.state === newState && !immediate) return; this.state = newState;
-                console.log("API CALL: setExpression('" + newState + "')");
-                switch (this.state) {
-                    case 'HAPPY': this.target.eyeSize = width / 14; this.target.mouthWidth = width / 6; this.target.mouthHeight = height / 10; break;
-                    case 'SURPRISED': this.target.eyeSize = width / 12; this.target.mouthWidth = width / 12; this.target.mouthHeight = height / 8; break;
-                    case 'THINKING': this.target.eyeSize = width / 18; this.target.mouthWidth = width / 7; this.target.mouthHeight = 5; break;
-                    default: this.target.eyeSize = width / 15; this.target.mouthWidth = width / 8; this.target.mouthHeight = height / 15; break;
-                }
-                if (immediate) { this.current = {...this.target}; }
-            },
-            update: function() {
-                this.bounceFactor = sin(frameCount * 0.05) * 5;
-                this.current.eyeSize = lerp(this.current.eyeSize, this.target.eyeSize, this.lerpFactor);
-                this.current.mouthWidth = lerp(this.current.mouthWidth, this.target.mouthWidth, this.lerpFactor);
-                this.current.mouthHeight = lerp(this.current.mouthHeight, this.target.mouthHeight, this.lerpFactor);
-            },
-            draw: function() { /* ... kode gambar wajah tidak diubah, disingkat untuk kejelasan ... */ let eyeY = height / 2 - height / 10; fill(255); noStroke(); ellipse(width / 2 - width / 10, eyeY + this.bounceFactor, this.current.eyeSize, this.current.eyeSize); ellipse(width / 2 + width / 10, eyeY + this.bounceFactor, this.current.eyeSize, this.current.eyeSize); let mouthY = height / 2 + height / 12; stroke(255); strokeWeight(10); switch (this.state) { case 'SURPRISED': fill(18, 18, 18); ellipse(width / 2, mouthY + this.current.mouthHeight / 2, this.current.mouthWidth, this.current.mouthHeight); break; case 'THINKING': noFill(); let wiggle = sin(frameCount * 0.2) * 5; line(width / 2 - this.current.mouthWidth / 2, mouthY + wiggle, width / 2 + this.current.mouthWidth / 2, mouthY + wiggle); break; default: noFill(); arc(width / 2, mouthY, this.current.mouthWidth, this.current.mouthHeight + this.bounceFactor, 0, PI); break; }}
+            setExpression: function(newState, immediate = false) { if (this.state === newState && !immediate) return; this.state = newState; console.log("API CALL: setExpression('" + newState + "')"); switch (this.state) { case 'HAPPY': this.target.eyeSize = width / 14; this.target.mouthWidth = width / 6; this.target.mouthHeight = height / 10; break; case 'SURPRISED': this.target.eyeSize = width / 12; this.target.mouthWidth = width / 12; this.target.mouthHeight = height / 8; break; case 'THINKING': this.target.eyeSize = width / 18; this.target.mouthWidth = width / 7; this.target.mouthHeight = 5; break; default: this.target.eyeSize = width / 15; this.target.mouthWidth = width / 8; this.target.mouthHeight = height / 15; break; } if (immediate) { this.current = {...this.target}; } },
+            update: function() { this.bounceFactor = sin(frameCount * 0.05) * 5; this.current.eyeSize = lerp(this.current.eyeSize, this.target.eyeSize, this.lerpFactor); this.current.mouthWidth = lerp(this.current.mouthWidth, this.target.mouthWidth, this.lerpFactor); this.current.mouthHeight = lerp(this.current.mouthHeight, this.target.mouthHeight, this.lerpFactor); },
+            draw: function() { let eyeY = height / 2 - height / 10; fill(255); noStroke(); ellipse(width / 2 - width / 10, eyeY + this.bounceFactor, this.current.eyeSize, this.current.eyeSize); ellipse(width / 2 + width / 10, eyeY + this.bounceFactor, this.current.eyeSize, this.current.eyeSize); let mouthY = height / 2 + height / 12; stroke(255); strokeWeight(10); switch (this.state) { case 'SURPRISED': fill(18, 18, 18); ellipse(width / 2, mouthY + this.current.mouthHeight / 2, this.current.mouthWidth, this.current.mouthHeight); break; case 'THINKING': noFill(); let wiggle = sin(frameCount * 0.2) * 5; line(width / 2 - this.current.mouthWidth / 2, mouthY + wiggle, width / 2 + this.current.mouthWidth / 2, mouthY + wiggle); break; default: noFill(); arc(width / 2, mouthY, this.current.mouthWidth, this.current.mouthHeight + this.bounceFactor, 0, PI); break; }}
         };
 
-        // --- MODUL 2: API PEMROSESAN AUDIO ---
+        // --- MODUL 2: API PEMROSESAN AUDIO (DIPERBARUI) ---
         const AsybotAudio = {
             mic: null,
             isListening: false,
             currentLevel: 0,
-            smoothing: 0.1, // Faktor penghalusan untuk visualizer
+            smoothing: 0.1,
+            
+            // Properti baru untuk deteksi suara
+            listeningThreshold: 0.02, // Ambang batas volume (sesuaikan jika perlu)
+            isSoundDetected: false,
+            soundStopDelay: 800,      // Waktu tunggu (ms) sebelum kembali ke netral
+            soundStopTimer: null,
 
             init: function() {
-                // Objek p5.AudioIn adalah input mikrofon
                 this.mic = new p5.AudioIn();
                 this.mic.start(() => {
                     console.log("Microphone activated.");
@@ -64,60 +53,58 @@
             },
 
             update: function() {
-                if (this.isListening) {
-                    // Dapatkan level volume (0-1.0) dan haluskan nilainya
-                    let targetLevel = this.mic.getLevel();
-                    this.currentLevel = lerp(this.currentLevel, targetLevel, this.smoothing);
+                if (!this.isListening) return;
+
+                let targetLevel = this.mic.getLevel();
+                this.currentLevel = lerp(this.currentLevel, targetLevel, this.smoothing);
+
+                // --- LOGIKA REAKSI AUDIO ---
+                // Jika suara melebihi ambang batas
+                if (this.currentLevel > this.listeningThreshold) {
+                    // Jika ini adalah deteksi pertama, ubah state
+                    if (!this.isSoundDetected) {
+                        this.isSoundDetected = true;
+                        AsybotFace.setExpression('THINKING');
+                    }
+                    // Reset timer setiap kali suara terdeteksi agar tidak kembali ke netral terlalu cepat
+                    clearTimeout(this.soundStopTimer);
+                    this.soundStopTimer = setTimeout(() => {
+                        this.isSoundDetected = false;
+                        AsybotFace.setExpression('NEUTRAL');
+                    }, this.soundStopDelay);
                 }
             },
 
             drawDebugVisualizer: function() {
-                if (this.isListening) {
-                    // Gambar lingkaran yang ukurannya merepresentasikan volume
-                    let vizDiameter = map(this.currentLevel, 0, 1, 50, 400);
-                    fill(255, 50); // Putih transparan
-                    noStroke();
-                    circle(width / 2, height - 150, vizDiameter);
-                }
+                if (!this.isListening) return;
+                let vizDiameter = map(this.currentLevel, 0, 1, 50, 400);
+                fill(255, 50); noStroke();
+                circle(width / 2, height - 150, vizDiameter);
+
+                // Gambar garis untuk menunjukkan ambang batas
+                let thresholdY = map(this.listeningThreshold, 0, 1, 50, 400);
+                stroke(255, 0, 0, 150); // Merah transparan
+                strokeWeight(2);
+                line(width/2 - 200, height - 150 - thresholdY/2, width/2 + 200, height - 150 - thresholdY/2);
             }
         };
         
         // --- DRIVER UTAMA APLIKASI ---
         let audioStarted = false;
-
-        function setup() {
-            createCanvas(windowWidth, windowHeight);
-            ellipseMode(CENTER);
-            AsybotFace.init();
-        }
-
+        function setup() { createCanvas(windowWidth, windowHeight); ellipseMode(CENTER); AsybotFace.init(); }
         function draw() {
             background("#121212");
-            
-            // Gambar dan update wajah
             AsybotFace.update();
             AsybotFace.draw();
-
             if (audioStarted) {
-                // Gambar dan update visualizer audio
-                AsybotAudio.update();
+                AsybotAudio.update(); // Update audio akan memicu update wajah jika perlu
                 AsybotAudio.drawDebugVisualizer();
             }
         }
-        
-        // Audio harus dimulai oleh interaksi pengguna karena kebijakan browser
         function mousePressed() {
-            if (!audioStarted) {
-                userStartAudio(); // Fungsi global p5.sound untuk memulai audio
-                AsybotAudio.init();
-                audioStarted = true;
-            }
+            if (!audioStarted) { userStartAudio(); AsybotAudio.init(); audioStarted = true; }
         }
-
-        function windowResized() {
-            resizeCanvas(windowWidth, windowHeight);
-            AsybotFace.setExpression(AsybotFace.state, true);
-        }
+        function windowResized() { resizeCanvas(windowWidth, windowHeight); AsybotFace.setExpression(AsybotFace.state, true); }
     </script>
 </body>
 </html>
