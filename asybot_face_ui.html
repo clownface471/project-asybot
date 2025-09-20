@@ -1,46 +1,25 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="id">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Asybot Face UI v7.1 (State Refined)</title>
+    <title>Asybot Client</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #111; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        canvas { display: block; }
+        body { margin: 0; overflow: hidden; background-color: #111; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; cursor: pointer; }
+        #defaultCanvas0 { position: absolute; top: 0; left: 0; z-index: 1; }
         #info-overlay {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            color: #fff;
-            background-color: rgba(0,0,0,0.5);
-            padding: 10px;
-            border-radius: 8px;
-            font-size: 16px;
-            max-width: 90%;
-            z-index: 5;
+            position: absolute; top: 10px; left: 10px; color: #fff; background-color: rgba(0,0,0,0.5);
+            padding: 10px; border-radius: 8px; font-size: 16px; z-index: 5; user-select: none;
         }
         #transcript { font-style: italic; color: #a0e0ff; }
         #status { font-weight: bold; color: #ffeb3b; }
-        #start-message {
-            position: absolute;
-            top: 0; left: 0; width: 100%; height: 100%;
-            display: flex; justify-content: center; align-items: center;
-            background-color: rgba(0,0,0,0.8);
-            color: white; font-size: 2em; cursor: pointer; z-index: 100;
+        #diagnostics {
+            position: absolute; top: 10px; right: 10px; color: #fff; background-color: rgba(0,0,0,0.5);
+            padding: 8px; border-radius: 5px; font-size: 12px; z-index: 5; text-align: right; user-select: none;
         }
-        #audio-debugger {
-            position: absolute;
-            bottom: 20px;
-            right: 20px;
-            width: 50px;
-            height: 50px;
-            background-color: rgba(255, 0, 0, 0.5);
-            border-radius: 50%;
-            border: 2px solid rgba(255, 255, 255, 0.5);
-            transform: scale(0);
-            transition: transform 0.1s;
-            z-index: 5;
-        }
+        #audio-bar-container { width: 100px; height: 10px; background-color: #333; border-radius: 5px; overflow: hidden; margin-top: 4px; border: 1px solid #555; }
+        #audio-bar { width: 0%; height: 100%; background-color: #e74c3c; transition: width 0.05s; }
+        #threshold-line { position: absolute; bottom: 18px; height: 10px; border-left: 2px solid #f1c40f; }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
 </head>
@@ -49,153 +28,331 @@
         Status: <span id="status">Waiting for Start</span><br>
         Anda Berkata: <span id="transcript">-</span>
     </div>
-    <div id="start-message">Klik untuk memulai...</div>
-    <div id="audio-debugger"></div>
+    <div id="diagnostics">
+        App State: <span id="app-state-diag">...</span><br>
+        Audio Level: <span id="audio-level-diag">-1.000</span>
+        <div id="audio-bar-container">
+            <div id="audio-bar"></div>
+            <div id="threshold-line"></div>
+        </div>
+    </div>
 </body>
 <script>
 // ===================================================================
-// MODUL 1: ANTARMUKA WAJAH ASYBOT (Tampilan)
+// KONFIGURASI
 // ===================================================================
-const AsybotFace = {
-    eyeY: 0, mouthH: 0, mouthW: 0, targetEyeY: 0, targetMouthH: 10, targetMouthW: 100, currentViseme: 'NEUTRAL', lastVisemeTime: 0, visemeDuration: 100, currentExpression: 'NEUTRAL',
-    expressions: {
-        'NEUTRAL': { eyeY: 0, mouthH: 10, mouthW: 100 },
-        'HAPPY': { eyeY: -15, mouthH: 20, mouthW: 140 },
-        'SURPRISED': { eyeY: -10, mouthH: 60, mouthW: 60 },
-        'LISTENING': { eyeY: 5, mouthH: 25, mouthW: 90 }, // Ekspresi baru
-        'THINKING': { eyeY: 0, mouthH: 15, mouthW: 80 }
-    },
-    visemes: { 'A': { mouthH: 60, mouthW: 90 }, 'E': { mouthH: 40, mouthW: 110 }, 'I': { mouthH: 20, mouthW: 120 }, 'O': { mouthH: 60, mouthW: 60 }, 'U': { mouthH: 40, mouthW: 40 }, 'NEUTRAL': { mouthH: 10, mouthW: 20 } },
-    init() { this.setExpression('NEUTRAL', true); },
-    setExpression(state = 'NEUTRAL', force = false) {
-        this.currentExpression = state;
-        if (this.expressions[state]) {
-            const expr = this.expressions[state];
-            this.targetEyeY = expr.eyeY;
-            if (this.currentViseme === 'NEUTRAL' || force) {
-                this.targetMouthH = expr.mouthH;
-                this.targetMouthW = expr.mouthW;
-            }
-        }
-    },
-    speak(text, onEndCallback = null) {
-        if (!window.speechSynthesis) { if(onEndCallback) onEndCallback(); return; }
-        this.currentExpression = 'SPEAKING'; // Set state internal
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'id-ID';
-        let wordIndex = 0;
-        const words = text.split(/\s+/);
-        utterance.onboundary = (event) => {
-            if (event.name === 'word') {
-                const currentWord = words[wordIndex++];
-                this.updateVisemeForWord(currentWord);
+const WEBSOCKET_URL = "ws://localhost:8765";
+
+// State Aplikasi Global
+let appState = 'START_SCREEN';
+let ws;
+
+// Variabel Audio Global
+let audioContext, analyser, dataArray, source, isAudioInitialized = false;
+const listeningThreshold = 0.02;
+
+// ===================================================================
+// MODUL WEBSOCKET
+// ===================================================================
+const AsybotSocket = {
+    connect() {
+        ws = new WebSocket(WEBSOCKET_URL);
+        ws.onopen = () => {
+            console.log("WebSocket > Terhubung ke server.");
+            document.getElementById('status').textContent = 'IDLE';
+        };
+        ws.onmessage = (event) => {
+            console.log("WebSocket < Menerima pesan:", event.data);
+            try {
+                const responseObject = JSON.parse(event.data);
+                AsybotFace.processResponseAndSpeak(responseObject, () => {
+                    document.getElementById('status').textContent = 'IDLE';
+                });
+            } catch (e) {
+                console.error("Gagal mem-parsing JSON dari server:", e);
+                AsybotFace.speak("Maaf, terjadi kesalahan komunikasi dengan otak saya.", () => {
+                    document.getElementById('status').textContent = 'IDLE';
+                });
             }
         };
+        ws.onclose = () => {
+            console.warn("WebSocket > Koneksi terputus. Mencoba menghubungkan kembali dalam 3 detik...");
+            document.getElementById('status').textContent = 'DISCONNECTED';
+            setTimeout(AsybotSocket.connect, 3000);
+        };
+        ws.onerror = (error) => {
+            console.error("WebSocket Error:", error);
+            ws.close();
+        };
+    },
+    send(data) {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(data));
+        } else {
+            console.error("WebSocket > Tidak dapat mengirim pesan, koneksi tidak terbuka.");
+        }
+    }
+};
+
+// ===================================================================
+// MODUL WAJAH (Tampilan dan Suara)
+// ===================================================================
+const AsybotFace = {
+    eyeY: 0, mouthH: 0, mouthW: 0, targetEyeY: 0, targetMouthH: 10, targetMouthW: 100,
+    pupilOffsetX: 0, pupilOffsetY: 0, targetPupilOffsetX: 0, targetPupilOffsetY: 0,
+    currentExpression: 'netral', currentViseme: 'C', lastBlink: 0, nextBlink: 0,
+    selectedVoice: null, isSpeaking: false, speechText: "", speechStartTime: 0, speechDuration: 0,
+    expressions: { 'netral': { eyeY: 0, mouthH: 10, mouthW: 100 }, 'senang': { eyeY: -15, mouthH: 20, mouthW: 140 }, 'terkejut': { eyeY: -10, mouthH: 60, mouthW: 60 }, 'mendengarkan': { eyeY: 5, mouthH: 30, mouthW: 80 }, 'berpikir': { eyeY: 0, mouthH: 15, mouthW: 80 } },
+    visemes: { 'A': { mouthH: 75, mouthW: 85 }, 'E': { mouthH: 40, mouthW: 120 }, 'I': { mouthH: 15, mouthW: 130 }, 'O': { mouthH: 70, mouthW: 70 }, 'U': { mouthH: 35, mouthW: 35 }, 'C': { mouthH: 5, mouthW: 110 }, 'S': { mouthH: 20, mouthW: 105 } },
+    init() { this.setExpression('netral', true); this.loadVoices(); this.scheduleNextBlink(); },
+    loadVoices() {
+        const setVoice = () => {
+            const voices = speechSynthesis.getVoices();
+            if (!voices.length) return;
+            let bestVoice = voices.find(v => v.lang === 'id-ID' && (v.name.includes('Ardi') || v.name.toLowerCase().includes('male')));
+            if (!bestVoice) bestVoice = voices.find(v => v.lang === 'id-ID' && v.name.includes('Google'));
+            if (!bestVoice) bestVoice = voices.find(v => v.lang === 'id-ID');
+            this.selectedVoice = bestVoice;
+            if (this.selectedVoice) console.log(`TTS > Suara dipilih: ${this.selectedVoice.name}`);
+        };
+        speechSynthesis.onvoiceschanged = setVoice;
+        setVoice();
+    },
+    scheduleNextBlink() { this.lastBlink = millis(); this.nextBlink = this.lastBlink + random(2000, 5000); },
+    setExpression(state = 'netral', force = false) {
+        if (this.isSpeaking && !force) return;
+        this.currentExpression = state;
+        const expr = this.expressions[state];
+        if (expr) {
+            this.targetEyeY = expr.eyeY;
+            this.targetMouthH = expr.mouthH;
+            this.targetMouthW = expr.mouthW;
+        }
+    },
+    processResponseAndSpeak(responseObject, onEndCallback) {
+        this.setExpression(responseObject.expression || 'netral');
+        const cleanedText = (responseObject.response || "").replace(/[*#`]/g, '');
+        this.speak(cleanedText, onEndCallback);
+    },
+    speak(text, onEndCallback = null) {
+        if (!window.speechSynthesis || !text) { if (onEndCallback) onEndCallback(); return; }
+        this.isSpeaking = true;
+        this.speechText = text;
+        this.speechStartTime = millis();
+        this.speechDuration = text.length * 80;
+        document.getElementById('status').textContent = 'SPEAKING';
+        const utterance = new SpeechSynthesisUtterance(text);
+        if (this.selectedVoice) utterance.voice = this.selectedVoice;
         utterance.onend = () => {
-            this.currentViseme = 'NEUTRAL';
-            this.lastVisemeTime = millis();
-            this.setExpression('NEUTRAL', true);
-            if (onEndCallback) {
-                onEndCallback();
-            }
+            this.isSpeaking = false;
+            this.currentViseme = 'C';
+            this.setExpression('netral', true);
+            if (onEndCallback) onEndCallback();
         };
         speechSynthesis.speak(utterance);
     },
-    updateVisemeForWord(word) { word = word.toLowerCase(); let dominantVowel = 'NEUTRAL'; if (/[aáàâä]/i.test(word)) dominantVowel = 'A'; else if (/[eéèêë]/i.test(word)) dominantVowel = 'E'; else if (/[iíìîï]/i.test(word)) dominantVowel = 'I'; else if (/[oóòôö]/i.test(word)) dominantVowel = 'O'; else if (/[uúùûü]/i.test(word)) dominantVowel = 'U'; this.currentViseme = dominantVowel; this.lastVisemeTime = millis(); },
+    updateVisemeForChar(char = "") {
+        char = char.toLowerCase();
+        if ('a'.includes(char)) this.currentViseme = 'A';
+        else if ('eèé'.includes(char)) this.currentViseme = 'E';
+        else if ('iìí'.includes(char)) this.currentViseme = 'I';
+        else if ('oòó'.includes(char)) this.currentViseme = 'O';
+        else if ('uùú'.includes(char)) this.currentViseme = 'U';
+        else if ('mbp'.includes(char)) this.currentViseme = 'C';
+        else this.currentViseme = 'S';
+    },
     update() {
         let lerpAmount = 0.1;
+        this.targetPupilOffsetX = (mouseX - width / 2) * 0.05;
+        this.targetPupilOffsetY = (mouseY - height / 2) * 0.05;
+        this.pupilOffsetX = lerp(this.pupilOffsetX, this.targetPupilOffsetX, lerpAmount);
+        this.pupilOffsetY = lerp(this.pupilOffsetY, this.targetPupilOffsetY, lerpAmount);
+
+        let eyeSize = 80;
+        if (millis() > this.nextBlink) {
+            if (millis() < this.nextBlink + 150) eyeSize = 10;
+            else this.scheduleNextBlink();
+        }
         this.eyeY = lerp(this.eyeY, this.targetEyeY, lerpAmount);
 
-        // Logika animasi mulut
-        if (this.currentExpression === 'SPEAKING' && this.currentViseme !== 'NEUTRAL' && millis() - this.lastVisemeTime < this.visemeDuration) {
+        if (this.isSpeaking) {
+            const elapsed = millis() - this.speechStartTime;
+            const progress = constrain(elapsed / this.speechDuration, 0, 1);
+            const charIndex = floor(progress * this.speechText.length);
+            const currentChar = this.speechText.charAt(charIndex);
+            this.updateVisemeForChar(currentChar);
             const v = this.visemes[this.currentViseme];
-            this.mouthH = lerp(this.mouthH, v.mouthH, 0.5);
-            this.mouthW = lerp(this.mouthW, v.mouthW, 0.5);
-        } else {
-            this.currentViseme = 'NEUTRAL'; // Pastikan kembali ke netral jika tidak berbicara
-            this.mouthH = lerp(this.mouthH, this.targetMouthH, lerpAmount);
-            this.mouthW = lerp(this.mouthW, this.targetMouthW, lerpAmount);
+            this.targetMouthH = v.mouthH;
+            this.targetMouthW = v.mouthW;
+            lerpAmount = 0.45;
         }
-        
-        // Animasi 'bergumam' hanya untuk state THINKING
-        if (this.currentExpression === 'THINKING') {
-            this.mouthH += sin(frameCount * 0.2) * 2;
+
+        this.mouthH = lerp(this.mouthH, this.targetMouthH, lerpAmount);
+        this.mouthW = lerp(this.mouthW, this.targetMouthW, lerpAmount);
+        if (this.currentExpression === 'berpikir' && !this.isSpeaking) {
+            this.mouthH += sin(frameCount * 0.2) * 3;
         }
+        return eyeSize;
     },
-    draw() { background(20, 20, 30); let centerX = width / 2; let centerY = height / 2; noStroke(); fill(230, 240, 255); let eyeY_bouncy = this.eyeY + sin(frameCount * 0.05) * 5; ellipse(centerX - 100, centerY - 50 + eyeY_bouncy, 80, 80); ellipse(centerX + 100, centerY - 50 + eyeY_bouncy, 80, 80); let mouthY_bouncy = centerY + 50 + sin(frameCount * 0.05) * 5; ellipse(centerX, mouthY_bouncy, this.mouthW, this.mouthH); }
+    draw(eyeSize) {
+        background(20, 20, 30);
+        let centerX = width / 2; let centerY = height / 2;
+        let eyeY_bouncy = this.eyeY + sin(frameCount * 0.05) * 5;
+        let mouthY_bouncy = centerY + 50 + sin(frameCount * 0.05) * 5;
+        noStroke();
+        fill(230, 240, 255);
+        ellipse(centerX - 100, centerY - 50 + eyeY_bouncy, 80, eyeSize);
+        ellipse(centerX + 100, centerY - 50 + eyeY_bouncy, 80, eyeSize);
+        ellipse(centerX, mouthY_bouncy, this.mouthW, this.mouthH);
+        fill(20, 20, 30);
+        if (eyeSize > 15) {
+            ellipse(centerX - 100 + this.pupilOffsetX, centerY - 50 + eyeY_bouncy + this.pupilOffsetY, 30, 30);
+            ellipse(centerX + 100 + this.pupilOffsetX, centerY - 50 + eyeY_bouncy + this.pupilOffsetY, 30, 30);
+        }
+    }
 };
 
 // ===================================================================
-// MODUL 2: KLIEN WEBSOCKET (Komunikasi)
-// ===================================================================
-const AsybotWebSocket = {
-    socket: null,
-    init() { const serverAddress = "ws://localhost:8765"; document.getElementById('status').textContent = 'Connecting...'; this.socket = new WebSocket(serverAddress); this.socket.onopen = (event) => { console.log("WebSocket > Terhubung ke server."); document.getElementById('status').textContent = 'IDLE'; }; this.socket.onmessage = (event) => { console.log(`WebSocket < Menerima pesan: ${event.data}`); try { const msg = JSON.parse(event.data); if (msg.command === 'setExpression') { AsybotFace.setExpression(msg.value); document.getElementById('status').textContent = msg.value; } else if (msg.command === 'speak') { document.getElementById('status').textContent = 'SPEAKING'; AsybotFace.speak(msg.value, () => { document.getElementById('status').textContent = 'IDLE'; AsybotFace.setExpression('NEUTRAL'); }); } } catch (e) { console.error("WebSocket < Gagal memproses pesan:", e); } }; this.socket.onclose = (event) => { console.log("WebSocket > Koneksi ditutup."); document.getElementById('status').textContent = 'DISCONNECTED'; }; this.socket.onerror = (error) => { console.error("WebSocket > Terjadi error:", error); document.getElementById('status').textContent = 'ERROR'; }; },
-    sendMessage(data) { if (this.socket && this.socket.readyState === WebSocket.OPEN) { const message = JSON.stringify(data); this.socket.send(message); console.log(`WebSocket > Mengirim pesan: ${message}`); } else { console.error("WebSocket > Tidak dapat mengirim pesan, koneksi tidak terbuka."); } }
-};
-
-// ===================================================================
-// MODUL 3: AUDIO INPUT (Native Web Audio API)
-// ===================================================================
-const AsybotAudio = {
-    audioContext: null, analyser: null, dataArray: null, isStarted: false,
-    async init() { try { const stream = await navigator.mediaDevices.getUserMedia({ audio: true }); this.audioContext = new (window.AudioContext || window.webkitAudioContext)(); const source = this.audioContext.createMediaStreamSource(stream); this.analyser = this.audioContext.createAnalyser(); this.analyser.fftSize = 256; source.connect(this.analyser); const bufferLength = this.analyser.frequencyBinCount; this.dataArray = new Uint8Array(bufferLength); this.isStarted = true; console.log("Audio > Native Web Audio berhasil diinisialisasi."); return true; } catch (err) { console.error("Audio > Gagal menginisialisasi Native Web Audio:", err); return false; } },
-    getLevel() { if (!this.isStarted || !this.analyser) { return 0; } this.analyser.getByteFrequencyData(this.dataArray); let sum = 0; for (let i = 0; i < this.dataArray.length; i++) { sum += this.dataArray[i]; } const average = sum / this.dataArray.length; return average / 255; }
-};
-
-// ===================================================================
-// MODUL 4: SPEECH-TO-TEXT (Input)
+// MODUL STT (Pengenalan Ucapan)
 // ===================================================================
 const AsybotSTT = {
-    recognition: null, isListening: false,
-    init() { const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SpeechRecognition) { alert("Browser Anda tidak mendukung Speech Recognition."); return; } this.recognition = new SpeechRecognition(); this.recognition.continuous = false; this.recognition.interimResults = true; this.recognition.lang = 'id-ID';
-    this.recognition.onstart = () => { this.isListening = true; document.getElementById('status').textContent = 'LISTENING'; AsybotFace.setExpression('LISTENING'); console.log("STT > Mulai mendengarkan."); };
-    this.recognition.onresult = (event) => { let interimTranscript = ''; let finalTranscript = ''; for (let i = event.resultIndex; i < event.results.length; ++i) { if (event.results[i].isFinal) { finalTranscript += event.results[i][0].transcript; } else { interimTranscript += event.results[i][0].transcript; } } document.getElementById('transcript').textContent = finalTranscript || interimTranscript; if (finalTranscript) { console.log(`STT > Hasil final: "${finalTranscript}"`); AsybotWebSocket.sendMessage({ event: "speechResult", transcript: finalTranscript }); document.getElementById('status').textContent = 'PROCESSING...'; } };
-    this.recognition.onend = () => { this.isListening = false; console.log("STT > Sesi mendengarkan berakhir."); if(document.getElementById('status').textContent === 'LISTENING') { AsybotFace.setExpression('NEUTRAL'); document.getElementById('status').textContent = 'IDLE'; } };
-    this.recognition.onerror = (event) => { console.error("STT Error:", event.error); this.isListening = false; const statusSpan = document.getElementById('status'); if (event.error === 'no-speech') { statusSpan.textContent = 'Ucapan tidak terdeteksi.'; } else if (event.error === 'audio-capture') { statusSpan.textContent = 'Error Mikrofon.'; } else { statusSpan.textContent = 'STT Error'; } setTimeout(() => { if(statusSpan.textContent !== 'IDLE') { statusSpan.textContent = 'IDLE'; AsybotFace.setExpression('NEUTRAL'); } }, 2500); }; },
-    start() { if (this.recognition && !this.isListening) { try{ this.recognition.start(); } catch(e){ console.error("Gagal memulai STT:", e); this.isListening = false; } } }
+    recognition: null, isListening: false, soundStartTime: 0, silenceStartTime: 0,
+    MIN_SPEECH_DURATION: 200, SILENCE_TIMEOUT: 800,
+    init() {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) { alert("Browser Anda tidak mendukung Speech Recognition."); return; }
+        this.recognition = new SpeechRecognition(); this.recognition.continuous = true; this.recognition.interimResults = false; this.recognition.lang = 'id-ID';
+        this.recognition.onresult = (event) => {
+            let finalTranscript = '';
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+                if (event.results[i].isFinal) finalTranscript += event.results[i][0].transcript;
+            }
+            finalTranscript = finalTranscript.trim();
+            if (!finalTranscript) return;
+            document.getElementById('transcript').textContent = finalTranscript;
+            // Kirim hasil transkrip ke server
+            AsybotSocket.send({ event: 'speechResult', transcript: finalTranscript });
+            // Server akan mengirim kembali respons untuk diucapkan
+        };
+        this.recognition.onend = () => { this.isListening = false; if (document.getElementById('status').textContent === 'LISTENING') { document.getElementById('status').textContent = 'IDLE'; AsybotFace.setExpression('netral', true); } };
+        this.recognition.onerror = (e) => { console.error("STT Error:", e.error); this.isListening = false; };
+    },
+    start() { if (this.recognition && !this.isListening) { try { this.recognition.start(); this.isListening = true; } catch(e){} } },
+    stop() { if (this.recognition && this.isListening) { try { this.recognition.stop(); } catch(e){} } }
 };
 
 // ===================================================================
 // P5.JS SETUP & DRAW LOOP (Program Utama)
 // ===================================================================
-const listeningThreshold = 0.1;
-
-function setup() { createCanvas(windowWidth, windowHeight); AsybotFace.init(); }
-
-function draw() {
-    AsybotFace.update();
-    AsybotFace.draw();
-    const currentStatus = document.getElementById('status').textContent;
-    if (AsybotAudio.isStarted) {
-        const audioLevel = AsybotAudio.getLevel();
-        const debuggerElem = document.getElementById('audio-debugger');
-        const scale = map(audioLevel * 5, 0, 1, 0, 5, true);
-        debuggerElem.style.transform = `scale(${scale})`;
-        if (currentStatus === 'IDLE' && audioLevel > listeningThreshold) {
-            AsybotSTT.start();
-        }
-    }
+function setup() {
+    createCanvas(windowWidth, windowHeight);
+    AsybotFace.init();
+    AsybotSTT.init();
+    const thresholdPos = 100 * listeningThreshold / 0.1;
+    document.getElementById('threshold-line').style.left = `${thresholdPos}px`;
 }
 
 function windowResized() { resizeCanvas(windowWidth, windowHeight); }
 
-document.getElementById('start-message').addEventListener('click', async () => {
-    const startMessage = document.getElementById('start-message');
-    const statusSpan = document.getElementById('status');
-    startMessage.textContent = 'Initializing...';
-    statusSpan.textContent = 'Initializing Audio...';
-    const audioSuccess = await AsybotAudio.init();
-    if (audioSuccess) {
-        statusSpan.textContent = 'Initializing STT...';
-        AsybotSTT.init();
-        AsybotWebSocket.init();
-        startMessage.style.display = 'none';
-    } else {
-        alert("Gagal menginisialisasi audio. Pastikan Anda memberikan izin mikrofon.");
-        startMessage.textContent = 'Error Audio. Refresh Halaman.';
+function draw() {
+    if (appState === 'RUNNING') {
+        const eyeSize = AsybotFace.update();
+        AsybotFace.draw(eyeSize);
+        const audioLevel = getAudioLevel();
+        if (isAudioInitialized) {
+            handleListeningLogic(audioLevel);
+            drawDiagnostics(audioLevel);
+        }
+    } else if (appState === 'START_SCREEN') {
+        background(20, 20, 30);
+        fill(255); textAlign(CENTER, CENTER); textSize(32);
+        text("Klik untuk memulai...", width / 2, height / 2);
+    } else if (appState === 'INITIALIZING') {
+        background(20, 20, 30);
+        fill(255); textAlign(CENTER, CENTER); textSize(24);
+        text("Meminta izin & memuat...", width / 2, height / 2);
     }
-});
+}
+
+function mousePressed() {
+    if (appState === 'START_SCREEN') {
+        appState = 'INITIALIZING';
+        initializeAndRun();
+    }
+}
+
+async function initializeAndRun() {
+    try {
+        AsybotSocket.connect(); // Mulai koneksi WebSocket
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        await audioContext.resume();
+        const kickstart = audioContext.createOscillator();
+        kickstart.frequency.value = 1;
+        kickstart.connect(audioContext.destination);
+        kickstart.start(audioContext.currentTime);
+        kickstart.stop(audioContext.currentTime + 0.001);
+        source = audioContext.createMediaStreamSource(stream);
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        const bufferLength = analyser.frequencyBinCount;
+        dataArray = new Uint8Array(bufferLength);
+        source.connect(analyser);
+        isAudioInitialized = true;
+        appState = 'RUNNING';
+        // Status akan diatur ke IDLE oleh WebSocket onopen
+    } catch (err) {
+        console.error("Gagal menginisialisasi media:", err);
+        alert("Gagal mengakses mikrofon atau terhubung ke server. Pastikan server berjalan dan Anda memberikan izin.");
+        appState = 'START_SCREEN';
+    }
+}
+
+function getAudioLevel() {
+    if (!isAudioInitialized) return 0;
+    analyser.getByteFrequencyData(dataArray);
+    let sum = 0;
+    for (let i = 0; i < dataArray.length; i++) { sum += dataArray[i]; }
+    return (sum / dataArray.length) / 255;
+}
+
+function handleListeningLogic(audioLevel) {
+    const status = document.getElementById('status').textContent;
+    const isBusy = status === 'SPEAKING' || status === 'THINKING' || status === 'LISTENING';
+
+    if (ws.readyState !== WebSocket.OPEN || isBusy) {
+        AsybotSTT.stop();
+        return;
+    }
+
+    if (audioLevel > listeningThreshold) {
+        if (AsybotSTT.soundStartTime === 0) AsybotSTT.soundStartTime = millis();
+        AsybotSTT.silenceStartTime = 0;
+        if (!AsybotSTT.isListening && (millis() - AsybotSTT.soundStartTime > AsybotSTT.MIN_SPEECH_DURATION)) {
+            document.getElementById('status').textContent = 'LISTENING';
+            AsybotFace.setExpression('mendengarkan');
+            AsybotSTT.start();
+        }
+    } else {
+        if (AsybotSTT.soundStartTime > 0 && AsybotSTT.silenceStartTime === 0) {
+            AsybotSTT.silenceStartTime = millis();
+        }
+        if (AsybotSTT.isListening && (millis() - AsybotSTT.silenceStartTime > AsybotSTT.SILENCE_TIMEOUT)) {
+            AsybotSTT.stop();
+        }
+        if (!AsybotSTT.isListening) AsybotSTT.soundStartTime = 0;
+    }
+}
+
+function drawDiagnostics(audioLevel) {
+    document.getElementById('app-state-diag').textContent = appState;
+    if (isAudioInitialized) {
+        const levelText = audioLevel.toFixed(3);
+        document.getElementById('audio-level-diag').textContent = levelText;
+        const barWidth = Math.min(100, (audioLevel / 0.1) * 100);
+        document.getElementById('audio-bar').style.width = `${barWidth}%`;
+    }
+}
 </script>
 </html>
 
